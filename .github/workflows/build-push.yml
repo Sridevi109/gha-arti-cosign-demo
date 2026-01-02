@@ -1,0 +1,53 @@
+name: Build and Push Docker Image to Artifactory
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Prepare registry hostname from ARTI_URL (strip http/https)
+      - name: Prepare registry env
+        env:
+          ARTI_URL: ${{ secrets.ARTI_URL }}
+        run: |
+          REGISTRY=${ARTI_URL#https://}
+          REGISTRY=${REGISTRY#http://}
+          echo "REGISTRY=$REGISTRY" >> $GITHUB_ENV
+          echo "Using registry: $REGISTRY"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Artifactory Docker registry
+        env:
+          REGISTRY: ${{ env.REGISTRY }}
+          ARTI_USERNAME: ${{ secrets.ARTI_USERNAME }}
+          ARTI_PASSWORD: ${{ secrets.ARTI_PASSWORD }}
+        run: |
+          echo "$ARTI_PASSWORD" | docker login "$REGISTRY" -u "$ARTI_USERNAME" --password-stdin
+
+      - name: Build Docker image
+        env:
+          REGISTRY: ${{ env.REGISTRY }}
+          ARTI_DOCKER_REPO: ${{ secrets.ARTI_DOCKER_REPO }}
+        run: |
+          IMAGE="$REGISTRY/$ARTI_DOCKER_REPO/gha-arti-cosign-demo:${GITHUB_SHA}"
+          echo "IMAGE=$IMAGE" >> $GITHUB_ENV
+          echo "Building image: $IMAGE"
+          docker build -t "$IMAGE" .
+
+      - name: Push Docker image to Artifactory
+        env:
+          IMAGE: ${{ env.IMAGE }}
+        run: |
+          echo "Pushing image: $IMAGE"
+          docker push "$IMAGE"
